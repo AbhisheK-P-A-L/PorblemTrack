@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LeetTrack — Revision Queue</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="/js/auth.js"></script>
+</head>
+<body>
+
+<nav>
+  <a class="brand" href="/search.html">🧩 LeetTrack</a>
+  <a href="/search.html">Search</a>
+  <a href="/saved.html">My Problems</a>
+  <a href="/revision.html">Revision</a>
+  <span class="spacer"></span>
+  <span id="userEmail"></span>
+  <button id="logoutBtn">Log out</button>
+</nav>
+
+<div class="container">
+  <h1>⭐ Revision Queue</h1>
+  <p style="color:#666;margin-bottom:24px;font-size:0.9rem">
+    Problems you've starred, sorted by a topic-weighted priority score.
+    High-frequency topics (Array, DP, Graph, Tree) surface first.
+  </p>
+
+  <div id="msg" class="msg" style="display:none"></div>
+  <div id="queue"><div class="spinner">Loading…</div></div>
+</div>
+
+<script>
+  (async () => { await requireAuth(); await setupNav(); await loadQueue(); })();
+
+  const msgEl = document.getElementById("msg");
+  const queue  = document.getElementById("queue");
+
+  async function loadQueue() {
+    try {
+      const res  = await apiFetch("/api/saved/revision?size=50");
+      if (!res.ok) throw new Error("Failed to load revision queue");
+      const data = await res.json();
+
+      if (data.length === 0) {
+        queue.innerHTML = '<p class="empty-msg">No problems in revision queue. Star (★) problems from <a href="/saved.html">My Problems</a>.</p>';
+        return;
+      }
+
+      queue.innerHTML = data.map((p, i) => {
+        const lastRevised = p.lastRevisedAt
+          ? "Last revised: " + new Date(p.lastRevisedAt).toLocaleDateString()
+          : "Never revised";
+        return `
+          <div class="revision-item">
+            <span style="color:#aaa;font-size:0.85rem;min-width:24px">${i+1}.</span>
+            <div style="flex:1">
+              <div class="ri-title">
+                <a href="${p.link || '#'}" target="_blank" rel="noopener">${escHtml(p.title)}</a>
+              </div>
+              <div class="ri-meta">${escHtml(p.canonicalTopic)} · ${lastRevised}</div>
+              ${p.notes ? `<div style="font-size:0.82rem;color:#555;margin-top:4px;font-style:italic">${escHtml(p.notes)}</div>` : ''}
+            </div>
+            <span class="badge ${platBadge(p.platform)}">${p.platform}</span>
+            <span class="badge ${diffBadge(p.difficulty)}">${p.difficulty || '?'}</span>
+            <button class="btn btn-sm btn-outline" onclick="markRevised(${p.id}, this)">Mark Revised</button>
+          </div>
+        `;
+      }).join("");
+
+    } catch (err) {
+      showMsg(msgEl, err.message, "err");
+      queue.innerHTML = "";
+    }
+  }
+
+  async function markRevised(id, btn) {
+    btn.disabled = true;
+    try {
+      await apiFetch(`/api/saved/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ markedForRevision: true })
+      });
+      btn.textContent = "✓ Done";
+      btn.className = "btn btn-sm btn-primary";
+    } catch (err) {
+      btn.disabled = false;
+      showMsg(msgEl, "Update failed: " + err.message, "err");
+    }
+  }
+
+  function escHtml(s) {
+    if (!s) return "";
+    return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  }
+</script>
+</body>
+</html>

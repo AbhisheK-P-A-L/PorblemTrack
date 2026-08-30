@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LeetTrack — My Problems</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="/js/auth.js"></script>
+</head>
+<body>
+
+<nav>
+  <a class="brand" href="/search.html">🧩 LeetTrack</a>
+  <a href="/search.html">Search</a>
+  <a href="/saved.html">My Problems</a>
+  <a href="/revision.html">Revision</a>
+  <span class="spacer"></span>
+  <span id="userEmail"></span>
+  <button id="logoutBtn">Log out</button>
+</nav>
+
+<div class="container">
+  <h1>My Saved Problems</h1>
+
+  <button class="btn btn-outline" id="exportBtn" onclick="exportPdf()">⬇ Export PDF</button>
+
+  <div id="msg" class="msg" style="display:none"></div>
+  <div id="content"><div class="spinner">Loading…</div></div>
+</div>
+
+<script>
+  (async () => { await requireAuth(); await setupNav(); await loadSaved(); })();
+
+  const msgEl   = document.getElementById("msg");
+  const content = document.getElementById("content");
+
+  async function loadSaved() {
+    try {
+      const res  = await apiFetch("/api/saved");
+      if (!res.ok) throw new Error("Failed to load saved problems");
+      const data = await res.json(); // { "Array": [...], "DP": [...] }
+
+      const topics = Object.keys(data);
+      if (topics.length === 0) {
+        content.innerHTML = '<p class="empty-msg">No saved problems yet. <a href="/search.html">Search and save some!</a></p>';
+        return;
+      }
+
+      content.innerHTML = topics.map(topic => `
+        <div class="topic-section">
+          <h2>${escHtml(topic)}</h2>
+          ${data[topic].map(p => renderItem(p)).join("")}
+        </div>
+      `).join("");
+
+    } catch (err) {
+      showMsg(msgEl, err.message, "err");
+    }
+  }
+
+  function renderItem(p) {
+    const star = p.markedForRevision ? '★' : '☆';
+    return `
+      <div class="saved-item" id="item-${p.id}">
+        <div class="item-header">
+          <span class="item-title">
+            <a href="${p.link || '#'}" target="_blank" rel="noopener">${escHtml(p.title)}</a>
+          </span>
+          <span class="badge ${platBadge(p.platform)}">${p.platform}</span>
+          <span class="badge ${diffBadge(p.difficulty)}">${p.difficulty || '?'}</span>
+          <span class="star" title="Toggle revision flag" style="cursor:pointer"
+                onclick="toggleRevision(${p.id}, ${!p.markedForRevision})">${star}</span>
+        </div>
+        <div>
+          <textarea class="notes-area" id="notes-${p.id}"
+            placeholder="Add notes (edge cases, key insight, time/space complexity)…"
+            onblur="saveNotes(${p.id})">${escHtml(p.notes || '')}</textarea>
+        </div>
+        <div class="item-actions">
+          <button class="btn btn-sm btn-outline" onclick="saveNotes(${p.id})">Save Notes</button>
+          <button class="btn btn-sm btn-danger" onclick="deleteSaved(${p.id})">Remove</button>
+        </div>
+      </div>
+    `;
+  }
+
+  async function toggleRevision(id, newVal) {
+    try {
+      await apiFetch(`/api/saved/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ markedForRevision: newVal })
+      });
+      await loadSaved(); // re-render
+    } catch (err) {
+      showMsg(msgEl, "Update failed: " + err.message, "err");
+    }
+  }
+
+  async function saveNotes(id) {
+    const notes = document.getElementById(`notes-${id}`)?.value ?? "";
+    try {
+      const res = await apiFetch(`/api/saved/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ notes })
+      });
+      if (!res.ok) throw new Error("Notes save failed");
+      showMsg(msgEl, "Notes saved ✓", "ok");
+    } catch (err) {
+      showMsg(msgEl, err.message, "err");
+    }
+  }
+
+  async function deleteSaved(id) {
+    if (!confirm("Remove this problem from your list?")) return;
+    try {
+      await apiFetch(`/api/saved/${id}`, { method: "DELETE" });
+      document.getElementById(`item-${id}`)?.remove();
+    } catch (err) {
+      showMsg(msgEl, "Delete failed: " + err.message, "err");
+    }
+  }
+
+  async function exportPdf() {
+    const btn = document.getElementById("exportBtn");
+    btn.disabled = true;
+    btn.textContent = "Generating…";
+    try {
+      const token = await getToken();
+      // Trigger file download by creating a temporary anchor
+      const res = await apiFetch("/api/export/pdf");
+      if (!res.ok) throw new Error("PDF export failed");
+      const blob = await res.blob();
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement("a");
+      a.href     = url;
+      a.download = "leettrack-notes.pdf";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      showMsg(msgEl, err.message, "err");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "⬇ Export PDF";
+    }
+  }
+
+  function escHtml(s) {
+    if (!s) return "";
+    return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  }
+</script>
+</body>
+</html>

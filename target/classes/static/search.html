@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LeetTrack — Search</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="/js/auth.js"></script>
+</head>
+<body>
+
+<nav>
+  <a class="brand" href="/search.html">🧩 LeetTrack</a>
+  <a href="/search.html">Search</a>
+  <a href="/saved.html">My Problems</a>
+  <a href="/revision.html">Revision</a>
+  <span class="spacer"></span>
+  <span id="userEmail"></span>
+  <button id="logoutBtn">Log out</button>
+</nav>
+
+<div class="container">
+  <h1>Search Problems</h1>
+  <div class="search-bar">
+    <input type="text" id="searchInput" placeholder="Search by title or topic (e.g. two sum, binary tree)…" autofocus>
+    <button class="btn btn-primary" id="searchBtn">Search</button>
+  </div>
+
+  <div id="msg" class="msg" style="display:none"></div>
+  <div id="results" class="results-grid"></div>
+</div>
+
+<script>
+  (async () => { await requireAuth(); await setupNav(); })();
+
+  const input   = document.getElementById("searchInput");
+  const btn     = document.getElementById("searchBtn");
+  const results = document.getElementById("results");
+  const msgEl   = document.getElementById("msg");
+
+  btn.addEventListener("click", doSearch);
+  input.addEventListener("keydown", e => { if (e.key === "Enter") doSearch(); });
+
+  async function doSearch() {
+    const q = input.value.trim();
+    if (!q) return;
+    results.innerHTML = '<div class="spinner">Searching LeetCode, Codeforces, and dataset…</div>';
+    btn.disabled = true;
+
+    try {
+      const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+      if (!res.ok) throw new Error("Search failed: " + res.status);
+      const data = await res.json();
+
+      if (data.length === 0) {
+        results.innerHTML = '<p class="empty-msg">No problems found. Try a different keyword.</p>';
+        return;
+      }
+
+      results.innerHTML = data.map((p, i) => `
+        <div class="problem-card" id="card-${i}">
+          <div class="title">
+            <a href="${p.link || '#'}" target="_blank" rel="noopener">${escHtml(p.title)}</a>
+          </div>
+          <span class="badge ${platBadge(p.platform)}">${p.platform}</span>
+          <span class="badge ${diffBadge(p.difficulty)}">${p.difficulty || '?'}</span>
+          <span style="font-size:0.8rem;color:#888">${escHtml(p.canonicalTopic || '')}</span>
+          <button class="btn btn-sm btn-outline" onclick="saveProblem(${i})">+ Save</button>
+        </div>
+      `).join("");
+
+      // Store results in memory so save buttons can reference them
+      window._results = data;
+
+    } catch (err) {
+      showMsg(msgEl, err.message, "err");
+      results.innerHTML = "";
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  async function saveProblem(index) {
+    const p = window._results[index];
+    const btn = document.querySelector(`#card-${index} button`);
+    btn.disabled = true;
+    btn.textContent = "Saving…";
+
+    try {
+      const res = await apiFetch("/api/saved", {
+        method: "POST",
+        body: JSON.stringify(p)
+      });
+      if (!res.ok) throw new Error("Save failed");
+      btn.textContent = "✓ Saved";
+      btn.className = "btn btn-sm btn-primary";
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = "+ Save";
+      showMsg(msgEl, "Could not save: " + err.message, "err");
+    }
+  }
+
+  function escHtml(s) {
+    if (!s) return "";
+    return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  }
+</script>
+</body>
+</html>
